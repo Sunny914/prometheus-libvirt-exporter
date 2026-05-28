@@ -1,0 +1,6 @@
+nohup: ignoring input
+time=2026-05-28T04:03:28.599+05:30 level=INFO source=main.go:59 msg="Starting libvirt_exporter" version="(version=, branch=, revision=7e47d9034eab964afc9152b7197ed891633ead49-modified)"
+time=2026-05-28T04:03:28.599+05:30 level=INFO source=main.go:60 msg="Build context" build_context="(go=go1.26.0, platform=linux/amd64, user=, date=, tags=unknown)"
+time=2026-05-28T04:03:28.599+05:30 level=INFO source=main.go:61 msg="Timeout value" timeout_value=3s
+time=2026-05-28T04:03:28.599+05:30 level=INFO source=main.go:62 msg="Max concurrent collects" max_concurrent_collects=4
+time=2026-05-28T04:03:28.599+05:30 level=ERROR source=main.go:93 msg="Failed to start server" msg="listen tcp :9177: bind: address already in use"
