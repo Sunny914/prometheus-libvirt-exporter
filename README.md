@@ -164,6 +164,18 @@ This release provides a set of assets for the prometheus-libvirt-exporter. It in
 | libvirt_storage_pool_state                            | "storage_pool"                                                                                                                                | State of the storage pool                                                                                                                                                                |
 | libvirt_storage_pool_timed_out                        | "storage_pool"                                                                                                                                | Whether scraping libvirt's pool metrics has timed out pool                                                                                                                                                                |
 
+### Topology metrics (additive)
+
+| Name | Labels | Description |
+| ---- | ------ | ----------- |
+| libvirt_domain_relationship_info | domain, relation_type, source, target | Directed graph edge (value 1) |
+| libvirt_domain_storage_topology_info | domain, virtual_disk, backing_file, mountpoint, physical_device, storage_pool | Disk to storage chain (value 1) |
+| libvirt_network_topology_info | domain, virtual_interface, bridge, physical_interface | NIC to bridge to uplink (value 1) |
+| libvirt_guest_filesystem_info | domain, mountpoint, filesystem, device | Guest FS from QEMU agent (value 1) |
+| libvirt_guest_filesystem_size_bytes | domain, mountpoint, filesystem, device | Guest FS total bytes |
+| libvirt_guest_filesystem_used_bytes | domain, mountpoint, filesystem, device | Guest FS used bytes |
+| libvirt_guest_filesystem_free_bytes | domain, mountpoint, filesystem, device | Guest FS free bytes |
+
 ## Example
 
 ```text
@@ -226,4 +238,8 @@ libvirt_storage_pool_available_bytes{storage_pool="testpool"} 7264227328
 libvirt_storage_pool_capacity_bytes{storage_pool="testpool"} 12573614080
 libvirt_storage_pool_state{storage_pool="testpool"} 2
 libvirt_storage_pool_timed_out{storage_pool="testpool"} 0
+libvirt_domain_relationship_info{domain="test-cvm",relation_type="attached_disk",source="test-cvm",target="vda"} 1
+libvirt_domain_relationship_info{domain="test-cvm",relation_type="connected_bridge",source="vnet4",target="virbr0"} 1
+libvirt_domain_storage_topology_info{domain="test-cvm",virtual_disk="vda",backing_file="/var/lib/libvirt/images/test-cvm.qcow2",mountpoint="/",physical_device="nvme0n1",storage_pool="default"} 1
+libvirt_network_topology_info{domain="test-cvm",virtual_interface="vnet4",bridge="virbr0",physical_interface=""} 1
 ```

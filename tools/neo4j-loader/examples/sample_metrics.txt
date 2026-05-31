@@ -1,0 +1,12 @@
+# HELP libvirt_domain_relationship_info Relationship edge for infrastructure topology graphs.
+# TYPE libvirt_domain_relationship_info gauge
+libvirt_domain_relationship_info{domain="test-cvm",relation_type="attached_disk",source="test-cvm",target="vda"} 1
+libvirt_domain_relationship_info{domain="test-cvm",relation_type="attached_interface",source="test-cvm",target="vnet4"} 1
+libvirt_domain_relationship_info{domain="test-cvm",relation_type="connected_bridge",source="vnet4",target="virbr0"} 1
+libvirt_domain_relationship_info{domain="test-cvm",relation_type="bridge_uplink",source="virbr0",target="wlp0s20f3"} 1
+libvirt_domain_relationship_info{domain="test-cvm",relation_type="backing_file",source="vda",target="/var/lib/libvirt/images/test-cvm.qcow2"} 1
+libvirt_domain_relationship_info{domain="test-cvm",relation_type="physical_disk",source="/var/lib/libvirt/images/test-cvm.qcow2",target="nvme0n1"} 1
+libvirt_domain_relationship_info{domain="test-cvm",relation_type="storage_pool",source="nvme0n1",target="default"} 1
+libvirt_domain_relationship_info{domain="test-cvm",relation_type="guest_filesystem",source="test-cvm",target="/"} 1
+libvirt_domain_relationship_info{domain="test-cvm",relation_type="guest_filesystem",source="test-cvm",target="/boot"} 1
+libvirt_domain_relationship_info{domain="test-cvm",relation_type="vcpu_host_cpu",source="test-cvm",target="0"} 1

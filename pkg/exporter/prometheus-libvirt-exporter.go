@@ -416,6 +416,7 @@ type domainMeta struct {
 
 	libvirtDomain libvirt.Domain
 	libvirtSchema libvirt_schema.Domain
+	guestLibvirt  *libvirt.Libvirt
 }
 
 // LibvirtExporter implements a Prometheus exporter for libvirt state.
@@ -514,7 +515,22 @@ func CollectFromLibvirt(ch chan<- prometheus.Metric, uri string, driver libvirt.
 		return err
 	}
 
+	var guestL *libvirt.Libvirt
+	if rwURI := rwLibvirtURI(uri); rwURI != "" {
+		guestDialer := dialers.NewLocal(dialers.WithSocket(rwURI), dialers.WithLocalTimeout(5*time.Second))
+		guestL = libvirt.NewWithDialer(guestDialer)
+		if guestErr := guestL.ConnectToURI(driver); guestErr != nil {
+			logger.Debug("read-write libvirt connection unavailable for guest agent APIs", "uri", rwURI, "msg", guestErr)
+			guestL = nil
+		}
+	}
+
 	defer func() {
+		if guestL != nil {
+			if guestErr := guestL.Disconnect(); guestErr != nil {
+				logger.Debug("failed to disconnect guest libvirt", "msg", guestErr)
+			}
+		}
 		if err := l.Disconnect(); err != nil {
 			logger.Error("failed to disconnect", "msg", err)
 		}
@@ -552,8 +568,9 @@ func CollectFromLibvirt(ch chan<- prometheus.Metric, uri string, driver libvirt.
 	domainChan := make(chan domainMeta, len(domains))
 	poolChan := make(chan libvirt.StoragePool, len(pools))
 
-	for _, domain := range domains {
-		domainChan <- domain
+	for idx := range domains {
+		domains[idx].guestLibvirt = guestL
+		domainChan <- domains[idx]
 	}
 
 	for _, pool := range pools {
@@ -681,12 +698,23 @@ func CollectDomain(ch chan<- prometheus.Metric, l *libvirt.Libvirt, domain domai
 		return nil, false
 	}
 
-	for _, collectFunc := range []collectFunc{CollectDomainBlockDeviceInfo, CollectDomainNetworkInfo, CollectDomainJobInfo, CollectDomainMemoryStatInfo, CollectDomainVCPUInfo} {
+	for _, collectFunc := range []collectFunc{
+		CollectDomainBlockDeviceInfo, CollectDomainNetworkInfo, CollectDomainJobInfo,
+		CollectDomainMemoryStatInfo, CollectDomainVCPUInfo,
+	} {
 		if err, hasTimedOut = collectFunc(ch, l, domain, promLabels, logger, timeout); err != nil {
 			logger.Error("failed to collect some domain info", "domain", domain.libvirtDomain.Name, "msg", err)
 			return err, hasTimedOut
 		}
 	}
+
+	collectTopologyMetrics(ch, l, domain, promLabels, logger, timeout, []collectFunc{
+		CollectDomainRelationshipInfo,
+		CollectGuestFilesystemInfo,
+		CollectDomainStorageTopology,
+		CollectDomainNetworkTopology,
+		CollectDomainVCPUTopology,
+	})
 
 	return nil, false
 }
@@ -1438,4 +1466,6 @@ func (e *LibvirtExporter) Describe(ch chan<- *prometheus.Desc) {
 	ch <- libvirtStoragePoolCapacity
 	ch <- libvirtStoragePoolAllocation
 	ch <- libvirtStoragePoolAvailable
+
+	describeTopologyMetrics(ch)
 }
