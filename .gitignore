@@ -3,3 +3,24 @@ dist
 .vscode
 dashboards/openstack-libvirt-dashboard/vendor
 dashboards/openstack-libvirt-dashboard/jsonnetfile.lock.json
+
+# Go build and test outputs
+/prometheus-libvirt-exporter
+*.test
+*.out
+coverage.out
+
+# Runtime and generated local output
+*.log
+/metrics.txt
+
+# Python helper environment and cache
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Local environment files
+.env
+.env.*
