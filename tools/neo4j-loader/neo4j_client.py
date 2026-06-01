@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from neo4j import GraphDatabase
 
 REL_TYPE_PATTERN = re.compile(r"^[A-Z][A-Z0-9_]*$")
+DISK_PATTERN = re.compile(r"^(nvme\d+n\d+(p\d+)?|sd[a-z]\d*|vd[a-z]\d*)$")
 
 
 @dataclass
@@ -16,8 +17,27 @@ class LoadStats:
     relationships_merged: int
 
 
+def infer_node_label(name: str, rel: dict) -> str:
+    """Infer an additional Neo4j label for visualization."""
+    if name == rel["domain"]:
+        return "VM"
+    if rel["rel_cypher"] == "VCPU_HOST_CPU" and name != rel["domain"]:
+        return "CPU"
+    if name.startswith("vnet"):
+        return "NetworkInterface"
+    if name.startswith("virbr"):
+        return "Bridge"
+    if name.endswith(".qcow2"):
+        return "DiskImage"
+    if name.startswith("/"):
+        return "Filesystem"
+    if DISK_PATTERN.fullmatch(name):
+        return "Disk"
+    return "Resource"
+
+
 class Neo4jTopologyClient:
-    """Create Resource nodes and typed relationships with MERGE (idempotent)."""
+    """Create typed nodes and relationships with MERGE (idempotent)."""
 
     def __init__(
         self,
@@ -55,14 +75,16 @@ class Neo4jTopologyClient:
                 source = rel["source"]
                 target = rel["target"]
                 rel_cypher = self._validate_rel_cypher(rel["rel_cypher"])
+                source_label = infer_node_label(source, rel)
+                target_label = infer_node_label(target, rel)
                 node_names.add(source)
                 node_names.add(target)
 
                 query = f"""
-                MERGE (a:Resource {{name: $source}})
+                MERGE (a:{source_label} {{name: $source}})
                 ON CREATE SET a.discovered_by = $discovered_by
                 ON MATCH SET a.discovered_by = $discovered_by
-                MERGE (b:Resource {{name: $target}})
+                MERGE (b:{target_label} {{name: $target}})
                 ON CREATE SET b.discovered_by = $discovered_by
                 ON MATCH SET b.discovered_by = $discovered_by
                 MERGE (a)-[r:{rel_cypher}]->(b)
@@ -87,8 +109,6 @@ class Neo4jTopologyClient:
     def count_graph(self) -> tuple[int, int]:
         """Return (node_count, relationship_count) in the database."""
         with self._driver.session() as session:
-            nodes = session.run(
-                "MATCH (n:Resource) RETURN count(n) AS c"
-            ).single()["c"]
+            nodes = session.run("MATCH (n) RETURN count(n) AS c").single()["c"]
             rels = session.run("MATCH ()-[r]->() RETURN count(r) AS c").single()["c"]
         return int(nodes), int(rels)
