@@ -9,6 +9,9 @@ from neo4j import GraphDatabase
 
 REL_TYPE_PATTERN = re.compile(r"^[A-Z][A-Z0-9_]*$")
 DISK_PATTERN = re.compile(r"^(nvme\d+n\d+(p\d+)?|sd[a-z]\d*|vd[a-z]\d*)$")
+VCPU_PATTERN = re.compile(r"^vcpu\d+$")
+CPU_PATTERN = re.compile(r"^cpu\d+$")
+PARTITION_PATTERN = re.compile(r"^(nvme\d+n\d+p\d+|sd[a-z]\d+|vd[a-z]\d+)$")
 
 
 @dataclass
@@ -21,6 +24,12 @@ def infer_node_label(name: str, rel: dict) -> str:
     """Infer an additional Neo4j label for visualization."""
     if name == rel["domain"]:
         return "VM"
+    if VCPU_PATTERN.fullmatch(name):
+        return "VCPU"
+    if CPU_PATTERN.fullmatch(name):
+        return "CPU"
+    if PARTITION_PATTERN.fullmatch(name):
+        return "Partition"
     if rel["rel_cypher"] == "VCPU_HOST_CPU" and name != rel["domain"]:
         return "CPU"
     if name.startswith("vnet"):

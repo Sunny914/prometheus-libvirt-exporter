@@ -71,12 +71,14 @@ type relationshipEdge struct {
 
 // guestFilesystem holds parsed guest-agent filesystem data.
 type guestFilesystem struct {
-	mountpoint string
-	fstype     string
-	device     string
-	totalBytes uint64
-	usedBytes  uint64
-	freeBytes  uint64
+	mountpoint      string
+	fstype          string
+	device          string
+	totalBytes      uint64
+	usedBytes       uint64
+	freeBytes       uint64
+	diskAlias       string // e.g. "vda"
+	partitionDevice string // e.g. "/dev/vda2" (not normalized)
 }
 
 type vcpuTopologyEntry struct {
@@ -187,18 +189,37 @@ func CollectGuestFilesystemInfo(ch chan<- prometheus.Metric, l *libvirt.Libvirt,
 		ch <- prometheus.MustNewConstMetric(libvirtGuestFilesystemSizeBytesDesc, prometheus.GaugeValue, float64(fs.totalBytes), labels...)
 		ch <- prometheus.MustNewConstMetric(libvirtGuestFilesystemUsedBytesDesc, prometheus.GaugeValue, float64(fs.usedBytes), labels...)
 		ch <- prometheus.MustNewConstMetric(libvirtGuestFilesystemFreeBytesDesc, prometheus.GaugeValue, float64(fs.freeBytes), labels...)
-		emitGuestFilesystemRelationship(ch, promLabels, domain.domainName, fs.mountpoint)
+		emitGuestFilesystemRelationship(ch, promLabels, fs.diskAlias, fs.partitionDevice, fs.mountpoint)
 		emitted += 4
 	}
 	logger.Debug("guest filesystem metrics emitted", "domain", domain.domainName, "metrics", emitted)
 	return nil, false
 }
 
-func emitGuestFilesystemRelationship(ch chan<- prometheus.Metric, promLabels []string, domainName, mountpoint string) {
-	if mountpoint == "" {
+// normalizePartitionName converts /dev/vda2 -> vda2, or returns the input if already normalized.
+func normalizePartitionName(partitionDevice string) string {
+	if partitionDevice == "" {
+		return ""
+	}
+	if strings.HasPrefix(partitionDevice, "/dev/") {
+		return partitionDevice[5:] // strip /dev/ prefix
+	}
+	return partitionDevice
+}
+
+func emitGuestFilesystemRelationship(ch chan<- prometheus.Metric, promLabels []string, diskAlias, partitionDevice, mountpoint string) {
+	if diskAlias == "" || partitionDevice == "" || mountpoint == "" {
 		return
 	}
-	labels := append(promLabels, "guest_filesystem", domainName, mountpoint)
+	// Normalize partition name from /dev/vda2 to vda2
+	partitionName := normalizePartitionName(partitionDevice)
+
+	// Emit: disk -> partition
+	labels := append(promLabels, "has_partition", diskAlias, partitionName)
+	ch <- prometheus.MustNewConstMetric(libvirtDomainRelationshipInfoDesc, prometheus.GaugeValue, 1, labels...)
+
+	// Emit: partition -> mountpoint
+	labels = append(promLabels, "mounts", partitionName, mountpoint)
 	ch <- prometheus.MustNewConstMetric(libvirtDomainRelationshipInfoDesc, prometheus.GaugeValue, 1, labels...)
 }
 
@@ -313,13 +334,15 @@ func CollectDomainVCPUTopology(ch chan<- prometheus.Metric, l *libvirt.Libvirt, 
 	logger.Debug("vCPU topology parse complete", "domain", domain.domainName, "vcpus", len(entries))
 
 	emitted := 0
-	seenHostCPUs := make(map[int]struct{})
+	var edges []relationshipEdge
 	for _, entry := range entries {
 		pinned := "false"
 		if entry.pinned {
 			pinned = "true"
 		}
 		state := vcpuStateLabel(entry.state)
+
+		// Emit vCPU topology metrics (backward compatibility)
 		hostCPUs := entry.affinity
 		if entry.pinned {
 			if len(hostCPUs) == 0 && entry.currentHostCPU >= 0 {
@@ -335,15 +358,20 @@ func CollectDomainVCPUTopology(ch chan<- prometheus.Metric, l *libvirt.Libvirt, 
 		for _, hostCPU := range hostCPUs {
 			labels := append(promLabels, strconv.FormatUint(uint64(entry.vcpu), 10), strconv.Itoa(hostCPU), pinned, state)
 			ch <- prometheus.MustNewConstMetric(libvirtDomainVcpuTopologyInfoDesc, prometheus.GaugeValue, 1, labels...)
-			if _, seen := seenHostCPUs[hostCPU]; !seen {
-				seenHostCPUs[hostCPU] = struct{}{}
-				emitRelationshipEdges(ch, promLabels, []relationshipEdge{
-					{"vcpu_host_cpu", domain.domainName, strconv.Itoa(hostCPU)},
-				})
-			}
 			emitted++
 		}
+
+		// Emit topology graph edges: VM -> vCPU -> affinity CPUs (use affinity only, not currentHostCPU)
+		vcpuName := "vcpu" + strconv.FormatUint(uint64(entry.vcpu), 10)
+		edges = append(edges, relationshipEdge{"has_vcpu", domain.domainName, vcpuName})
+
+		// Add has_affinity edges for each CPU in the affinity list
+		for _, cpu := range entry.affinity {
+			cpuName := "cpu" + strconv.Itoa(cpu)
+			edges = append(edges, relationshipEdge{"has_affinity", vcpuName, cpuName})
+		}
 	}
+	emitRelationshipEdges(ch, promLabels, edges)
 	logger.Debug("vCPU topology metrics emitted", "domain", domain.domainName, "metrics", emitted)
 	return nil, false
 }
@@ -384,6 +412,9 @@ func ParseGuestFilesystemFromParams(params []libvirt.TypedParam) []guestFilesyst
 		if fs.totalBytes > fs.usedBytes {
 			fs.freeBytes = fs.totalBytes - fs.usedBytes
 		}
+		// Parse disk alias and partition device for topology relationships
+		fs.diskAlias = paramMap[base+".disk.0.alias"]
+		fs.partitionDevice = paramMap[base+".disk.0.device"]
 		if fs.mountpoint != "" || fs.device != "" {
 			out = append(out, fs)
 		}
