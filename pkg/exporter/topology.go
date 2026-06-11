@@ -321,8 +321,16 @@ func CollectDomainVCPUTopology(ch chan<- prometheus.Metric, l *libvirt.Libvirt, 
 		}
 		state := vcpuStateLabel(entry.state)
 		hostCPUs := entry.affinity
-		if len(hostCPUs) == 0 && entry.currentHostCPU >= 0 {
-			hostCPUs = []int{int(entry.currentHostCPU)}
+		if entry.pinned {
+			if len(hostCPUs) == 0 && entry.currentHostCPU >= 0 {
+				hostCPUs = []int{int(entry.currentHostCPU)}
+			}
+		} else {
+			if entry.currentHostCPU >= 0 {
+				hostCPUs = []int{int(entry.currentHostCPU)}
+			} else {
+				hostCPUs = nil
+			}
 		}
 		for _, hostCPU := range hostCPUs {
 			labels := append(promLabels, strconv.FormatUint(uint64(entry.vcpu), 10), strconv.Itoa(hostCPU), pinned, state)
